@@ -1,0 +1,13 @@
+Setup the dependencies:
+cp lib/* <site>/lib
+
+
+In <site>/etc/gerrit.config, configure the user and domain:
+[googleappsgroup]
+	user = cranger@cranger.org
+	domain = cranger.org
+
+
+In <site>/etc/secure.config, configure the password:
+[googleappsgroup]
+	password = XXXXXXXX
