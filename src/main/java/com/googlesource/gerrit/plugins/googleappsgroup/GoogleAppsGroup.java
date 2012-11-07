@@ -15,6 +15,7 @@
 package com.googlesource.gerrit.plugins.googleappsgroup;
 
 import com.google.gdata.client.appsforyourdomain.AppsGroupsService;
+import com.google.gdata.data.appsforyourdomain.generic.GenericEntry;
 import com.google.gdata.util.AuthenticationException;
 import com.google.gerrit.common.data.GroupDescription;
 import com.google.gerrit.common.data.GroupReference;
@@ -69,11 +70,68 @@ public class GoogleAppsGroup implements GroupBackend {
 
   @Override
   public GroupDescription.Basic get(final AccountGroup.UUID uuid) {
-    return null;
+    if (!uuid.get().startsWith(UUID_PREFIX)) {
+      return null;
+    }
+    return retrieveGroup(idOf(uuid));
+  }
+
+  private GroupDescription.Basic retrieveGroup(String query) {
+    try {
+      GenericEntry entry = service.retrieveGroup(query);
+      return groupFor(entry);
+    } catch (Exception e) {
+      log.warn(String.format("retrieveGroup(%s)", query), e);
+      return null;
+    }
   }
 
   @Override
   public Collection<GroupReference> suggest(String name) {
+    GroupDescription.Basic group = null;
+    if (name.startsWith(UUID_PREFIX)) {
+      group = retrieveGroup(name.substring(UUID_PREFIX.length()));
+    } else if (name.startsWith(NAME_PREFIX)) {
+      group = retrieveGroup(name.substring(NAME_PREFIX.length()));
+    }
+
+    if (group != null) {
+      return Collections.singleton(GroupReference.forGroup(group));
+    }
     return Collections.emptyList();
+  }
+
+  private static String idOf(AccountGroup.UUID uuid) {
+    return uuid.get().substring(UUID_PREFIX.length());
+  }
+
+  private static GroupDescription.Basic groupFor(GenericEntry entry) {
+    final String groupId =
+        entry.getProperty(AppsGroupsService.APPS_PROP_GROUP_ID);
+    if (groupId == null) {
+      return null;
+    }
+
+    return new GroupDescription.Basic() {
+      @Override
+      public AccountGroup.UUID getGroupUUID() {
+        return new AccountGroup.UUID(UUID_PREFIX + groupId);
+      }
+
+      @Override
+      public String getName() {
+        return NAME_PREFIX + groupId;
+      }
+
+      @Override
+      public boolean isVisibleToAll() {
+        return true;
+      }
+
+      @Override
+      public String toString() {
+        return String.format("GoogleAppsGroup[uuid=%s name=%s]", getGroupUUID(), getName());
+      }
+    };
   }
 }
