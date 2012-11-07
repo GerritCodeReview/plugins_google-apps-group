@@ -16,6 +16,7 @@ package com.googlesource.gerrit.plugins.googleappsgroup;
 
 import com.google.gdata.client.appsforyourdomain.AppsGroupsService;
 import com.google.gdata.data.appsforyourdomain.generic.GenericEntry;
+import com.google.gdata.data.appsforyourdomain.generic.GenericFeed;
 import com.google.gdata.util.AuthenticationException;
 import com.google.gerrit.common.data.GroupDescription;
 import com.google.gerrit.common.data.GroupReference;
@@ -32,8 +33,10 @@ import org.eclipse.jgit.lib.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -49,6 +52,7 @@ public class GoogleAppsGroup implements GroupBackend {
   private static final String NAME_PREFIX = "google/";
 
   private final AppsGroupsService service;
+  private final List<GroupDescription.Basic> allGroups;
 
   @Inject
   GoogleAppsGroup(@GerritServerConfig Config cfg) throws AuthenticationException {
@@ -57,6 +61,7 @@ public class GoogleAppsGroup implements GroupBackend {
     String domain = cfg.getString("googleappsgroup", null, "domain");
     service = new AppsGroupsService(user, password, domain,
         "gerrit-plugins-googleappsgroup");
+    allGroups = retrieveAllGroups();
   }
 
   @Override
@@ -123,21 +128,47 @@ public class GoogleAppsGroup implements GroupBackend {
 
   @Override
   public Collection<GroupReference> suggest(String name) {
-    GroupDescription.Basic group = null;
     if (name.startsWith(UUID_PREFIX)) {
-      group = retrieveGroup(name.substring(UUID_PREFIX.length()));
+      for (GroupDescription.Basic group : allGroups) {
+        if (group.getGroupUUID().get().equals(name)) {
+          return Collections.singleton(GroupReference.forGroup(group));
+        }
+      }
     } else if (name.startsWith(NAME_PREFIX)) {
-      group = retrieveGroup(name.substring(NAME_PREFIX.length()));
+      List<GroupReference> matches = new ArrayList<GroupReference>();
+      for (GroupDescription.Basic group : allGroups) {
+        if (group.getName().toLowerCase().startsWith(name.toLowerCase())) {
+          matches.add(GroupReference.forGroup(group));
+        }
+      }
+      return matches;
     }
 
-    if (group != null) {
-      return Collections.singleton(GroupReference.forGroup(group));
-    }
     return Collections.emptyList();
   }
 
   private static String idOf(AccountGroup.UUID uuid) {
     return uuid.get().substring(UUID_PREFIX.length());
+  }
+
+  private List<GroupDescription.Basic> retrieveAllGroups() {
+    GenericFeed feed;
+    try {
+      feed = service.retrieveAllGroups();
+    } catch (Exception e) {
+      log.warn("retrieveAllGroups()", e);
+      return Collections.emptyList();
+    }
+
+    List<GroupDescription.Basic> groups =
+        new ArrayList<GroupDescription.Basic>();
+    for (GenericEntry entry : feed.getEntries()) {
+      GroupDescription.Basic group = groupFor(entry);
+      if (group != null) {
+        groups.add(group);
+      }
+    }
+    return groups;
   }
 
   private static GroupDescription.Basic groupFor(GenericEntry entry) {
