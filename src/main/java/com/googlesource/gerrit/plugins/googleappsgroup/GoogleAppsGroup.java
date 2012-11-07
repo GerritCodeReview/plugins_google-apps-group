@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Set;
 
 /**
  * GroupBackend implementation for Google Apps domains.
@@ -65,7 +66,41 @@ public class GoogleAppsGroup implements GroupBackend {
 
   @Override
   public GroupMembership membershipsOf(IdentifiedUser user) {
-    return GroupMembership.EMPTY;
+    final Set<String> emails = user.getEmailAddresses();
+    if (emails.isEmpty()) {
+      return GroupMembership.EMPTY;
+    }
+
+    return new GroupMembership() {
+      @Override
+      public boolean contains(AccountGroup.UUID uuid) {
+        for (String email : emails) {
+          try {
+            if (service.isMember(idOf(uuid), email)) {
+              return true;
+            }
+          } catch (Exception e) {
+            log.warn(String.format("isMember(%s, %s)", uuid, email), e);
+          }
+        }
+        return false;
+      }
+
+      @Override
+      public boolean containsAnyOf(Iterable<AccountGroup.UUID> uuids) {
+        for (AccountGroup.UUID uuid : uuids) {
+          if (contains(uuid)) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      @Override
+      public Set<AccountGroup.UUID> getKnownGroups() {
+        return Collections.emptySet();
+      }
+    };
   }
 
   @Override
